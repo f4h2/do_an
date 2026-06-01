@@ -202,11 +202,10 @@ def main(argv=None):
     # RX  = [20.9911114, 105.7107914]
     # T1  = calcDistance(TX1[0], TX1[1], RX[0], RX[1])
     # T2  = calcDistance(TX2[0], TX2[1], RX[0], RX[1])
-    T1 = 2.94
-    T2 = 3.92
-    T0  = (T1 - T2) / speedOfLight * fs
+    T1 = 4.41   # khoảng cách thực TX1→RX tại điểm hiệu chỉnh (m)
+    T2 = 2.45   # khoảng cách thực TX2→RX tại điểm hiệu chỉnh (m)
     # D   = calcDistance(TX1[0], TX1[1], TX2[0], TX2[1])
-    D   = 6.86
+    D   = 6.86  # khoảng cách TX1→TX2 (m)
 
     # ── Nguồn dữ liệu: BladeRF hoặc file ──────────────────────────────────
     use_file = bool(args.file)
@@ -329,14 +328,18 @@ def main(argv=None):
             ax2.set_ylim(0, top)
 
         # TDOA + vị trí
-        Delta_T  = (tau1 - tau2) - T0
-        Delta_m  = Delta_T / fs * speedOfLight          # TDOA hiệu chỉnh (m)
+        # Delta_C: hiệu đường truyền TX1→RX trừ TX2→RX (m)
+        # tau1 lớn hơn → TX1 xa hơn → X lớn hơn
         Delta_C  = (tau1 - tau2) / fs * speedOfLight    # TDOA thô (m)
-        X        = (-Delta_C + D + Delta_m) / 2         # Khoảng cách TX1→RX (m)
+        # Bù offset cố định do delay phát/thu không đồng bộ
+        Delta_C_corr = Delta_C - (T1 - T2)              # TDOA đã hiệu chỉnh (m)
+        # 1D: TX1 tại 0, TX2 tại D, RX tại X tính từ TX1
+        # X - (D - X) = Delta_C_corr  =>  X = (D + Delta_C_corr) / 2
+        X        = (D + Delta_C_corr) / 2               # Khoảng cách TX1→RX (m)
         X2       = D - X                                # Khoảng cách TX2→RX (m)
         print(f"[CORR] Peak1={tau1:5d} ({v1:6.1f})  Peak2={tau2:5d} ({v2:6.1f})"
-              f"  TDOA_diff={Delta_m:+.2f} m"
-              f"  |  T1_est={X:.2f} m  T2_est={X2:.2f} m")
+              f"  Delta_C={Delta_C:+.4f} m  Delta_C_corr={Delta_C_corr:+.4f} m"
+              f"  |  T1_est={X:.4f} m  T2_est={X2:.4f} m")
 
         return line1, line2, peak1, peak2, txt1, txt2
 
