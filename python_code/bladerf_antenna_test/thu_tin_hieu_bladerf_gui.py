@@ -371,7 +371,6 @@ def main(argv=None):
             ax1.set_ylim(0, top)
             ax2.set_ylim(0, top)
 
-        # TDOA + ước lượng khoảng cách (theo thu_tin_hieu.m)
         Delta_T  = (tau1 - tau2) - T0
         Delta_m  = Delta_T / fs * speedOfLight          # TDOA hiệu chỉnh (m)
         Delta_C  = (tau1 - tau2) / fs * speedOfLight    # TDOA thô (m)
