@@ -60,6 +60,42 @@ def sc16q11_to_complex64(buf: np.ndarray) -> np.ndarray:
     return (I + 1j * Q).astype(np.complex64)
 
 
+def latlon_to_xy(ref_lat: float, ref_lon: float, lat: float, lon: float):
+    """Chuyển (lat, lon) sang Cartesian (x, y) mét, lấy (ref_lat, ref_lon) làm gốc."""
+    R = 6371000.0
+    x = np.radians(lon - ref_lon) * np.cos(np.radians((lat + ref_lat) / 2)) * R
+    y = np.radians(lat - ref_lat) * R
+    return x, y
+
+
+def trilaterate_2d(tx1_xy, tx2_xy, r1: float, r2: float, hint_xy=None):
+    """
+    Tính (x, y) của RX từ 2 trạm phát TX1, TX2 (m) với khoảng cách r1, r2.
+    Chọn nghiệm gần hint_xy nhất. Trả về None nếu không có nghiệm thực.
+    """
+    x1, y1 = tx1_xy
+    x2, y2 = tx2_xy
+    d = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+    if d == 0:
+        return None
+    a = (r1 ** 2 - r2 ** 2 + d ** 2) / (2 * d)
+    h2 = r1 ** 2 - a ** 2
+    if h2 < 0:
+        return None
+    h = np.sqrt(h2)
+    mx = x1 + a * (x2 - x1) / d
+    my = y1 + a * (y2 - y1) / d
+    px = h * (y2 - y1) / d
+    py = h * (x2 - x1) / d
+    sol1 = (mx + px, my - py)
+    sol2 = (mx - px, my + py)
+    if hint_xy is None:
+        return sol1
+    d1 = (sol1[0] - hint_xy[0]) ** 2 + (sol1[1] - hint_xy[1]) ** 2
+    d2 = (sol2[0] - hint_xy[0]) ** 2 + (sol2[1] - hint_xy[1]) ** 2
+    return sol1 if d1 <= d2 else sol2
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # BladeRF RX
 # ══════════════════════════════════════════════════════════════════════════════
@@ -192,6 +228,11 @@ def main(argv=None):
         "v1": 0.0,
         "v2": 0.0,
         "Delta_m": 0.0,
+        "x": 0.0,
+        "y": 0.0,
+        "tx1_xy": (0.0, 0.0),
+        "tx2_xy": (0.0, 0.0),
+        "rx_hint": (0.0, 0.0),
     }
 
     def recalc_geometry():
@@ -202,11 +243,19 @@ def main(argv=None):
         T2  = calcDistance(TX2[0], TX2[1], RX[0], RX[1])
         T0  = (T1 - T2) / speedOfLight * fs
         D   = calcDistance(TX1[0], TX1[1], TX2[0], TX2[1])
-        state["T0"] = T0
-        state["D"]  = D
-        state["T1"] = T1
-        state["T2"] = T2
+        tx1_xy  = (0.0, 0.0)
+        tx2_xy  = latlon_to_xy(TX1[0], TX1[1], TX2[0], TX2[1])
+        rx_hint = latlon_to_xy(TX1[0], TX1[1], RX[0], RX[1])
+        state["T0"]      = T0
+        state["D"]       = D
+        state["T1"]      = T1
+        state["T2"]      = T2
+        state["tx1_xy"]  = tx1_xy
+        state["tx2_xy"]  = tx2_xy
+        state["rx_hint"] = rx_hint
         print(f"[GEO]  T1={T1:.2f} m  T2={T2:.2f} m  D={D:.2f} m  T0={T0:.4f} samples")
+        print(f"[GEO]  TX1=(0, 0) m  TX2=({tx2_xy[0]:.2f}, {tx2_xy[1]:.2f}) m"
+              f"  RX hint=({rx_hint[0]:.2f}, {rx_hint[1]:.2f}) m")
 
     recalc_geometry()
 
@@ -405,12 +454,18 @@ def main(argv=None):
         Delta_C = (tau1 - tau2) / fs * speedOfLight    # TDOA thô (m)
         X       = (-Delta_C + D + Delta_m) / 2         # T1_est (m)
         X2      = D - X                                 # T2_est (m)
+        # Tính x, y (trilateration)
+        xy = trilaterate_2d(state["tx1_xy"], state["tx2_xy"], X, X2, hint_xy=state["rx_hint"])
+        rx_x = xy[0] if xy is not None else float("nan")
+        rx_y = xy[1] if xy is not None else float("nan")
 
         state.update({"tau1": tau1, "tau2": tau2, "v1": v1, "v2": v2,
-                      "Delta_m": Delta_m, "T1_est": X, "T2_est": X2})
+                      "Delta_m": Delta_m, "T1_est": X, "T2_est": X2,
+                      "x": rx_x, "y": rx_y})
 
         print(f"[CORR] Peak1={tau1:5d} ({v1:6.1f})  Peak2={tau2:5d} ({v2:6.1f})"
-              f"  TDOA={Delta_m:+.2f} m  |  T1_est={X:.2f} m  T2_est={X2:.2f} m")
+              f"  TDOA={Delta_m:+.2f} m  T1_est={X:.3f} m  T2_est={X2:.3f} m"
+              f"  |  x={rx_x:+.3f} m  y={rx_y:+.3f} m")
 
         # Cập nhật bảng thông tin
         info_str = (
@@ -435,6 +490,9 @@ def main(argv=None):
             f"\n"
             f"  T1_est  : {X:>10.3f} m\n"
             f"  T2_est  : {X2:>10.3f} m\n"
+            f"\n"
+            f"  x       : {rx_x:>+10.3f} m\n"
+            f"  y       : {rx_y:>+10.3f} m\n"
             f"\n"
             f"  ΔT1     : {X  - state['T1']:>+10.3f} m\n"
             f"  ΔT2     : {X2 - state['T2']:>+10.3f} m\n"

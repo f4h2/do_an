@@ -74,6 +74,50 @@ def sc16q11_to_complex64(buf: np.ndarray) -> np.ndarray:
     return (I + 1j * Q).astype(np.complex64)
 
 
+def latlon_to_xy(ref_lat: float, ref_lon: float, lat: float, lon: float):
+    """
+    Chuyển (lat, lon) sang toạ độ Cartesian (x, y) đơn vị mét,
+    lấy (ref_lat, ref_lon) làm gốc toạ độ (flat-Earth).
+    """
+    R = 6371000.0  # bán kính Trái Đất (m)
+    x = np.radians(lon - ref_lon) * np.cos(np.radians((lat + ref_lat) / 2)) * R
+    y = np.radians(lat - ref_lat) * R
+    return x, y
+
+
+def trilaterate_2d(tx1_xy, tx2_xy, r1: float, r2: float, hint_xy=None):
+    """
+    Tính toạ độ (x, y) của RX từ 2 trạm phát TX1, TX2 (đơn vị mét)
+    với khoảng cách r1 (đến TX1) và r2 (đến TX2).
+    Trả về (x, y) nghiệm gần với hint_xy nhất (nếu có),
+    hoặc None nếu không có nghiệm thực.
+    """
+    x1, y1 = tx1_xy
+    x2, y2 = tx2_xy
+    d = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+    if d == 0:
+        return None
+    a = (r1 ** 2 - r2 ** 2 + d ** 2) / (2 * d)
+    h2 = r1 ** 2 - a ** 2
+    if h2 < 0:
+        return None  # không có nghiệm thực
+    h = np.sqrt(h2)
+    # điểm giữa trên đường nối TX1→TX2
+    mx = x1 + a * (x2 - x1) / d
+    my = y1 + a * (y2 - y1) / d
+    # vector vuông góc
+    px = h * (y2 - y1) / d
+    py = h * (x2 - x1) / d
+    sol1 = (mx + px, my - py)
+    sol2 = (mx - px, my + py)
+    if hint_xy is None:
+        return sol1
+    # chọn nghiệm gần hint nhất
+    d1 = (sol1[0] - hint_xy[0]) ** 2 + (sol1[1] - hint_xy[1]) ** 2
+    d2 = (sol2[0] - hint_xy[0]) ** 2 + (sol2[1] - hint_xy[1]) ** 2
+    return sol1 if d1 <= d2 else sol2
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # BladeRF RX (chạy trong thread riêng)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -207,7 +251,7 @@ def main(argv=None):
     T0  = (T1 - T2) / speedOfLight * fs
     # D   = calcDistance(TX1[0], TX1[1], TX2[0], TX2[1])
     D   = 6.86
-──────────────────────
+
     use_file = bool(args.file)
     receiver = None
     file_iq  = None
@@ -327,11 +371,15 @@ def main(argv=None):
             ax1.set_ylim(0, top)
             ax2.set_ylim(0, top)
 
-        # TDOA
+        # TDOA + ước lượng khoảng cách (theo thu_tin_hieu.m)
         Delta_T  = (tau1 - tau2) - T0
-        Delta_m  = Delta_T / fs * speedOfLight
+        Delta_m  = Delta_T / fs * speedOfLight          # TDOA hiệu chỉnh (m)
+        Delta_C  = (tau1 - tau2) / fs * speedOfLight    # TDOA thô (m)
+        X        = (-Delta_C + D + Delta_m) / 2         # T1_est: khoảng cách TX1→RX (m)
+        X2       = D - X                                # T2_est: khoảng cách TX2→RX (m)
         print(f"[CORR] Peak1={tau1:5d} ({v1:6.1f})  Peak2={tau2:5d} ({v2:6.1f})"
-              f"  TDOA_diff={Delta_m:+.2f} m")
+              f"  TDOA={Delta_m:+.2f} m"
+              f"  |  T1 được tính ra bằng: {X:.3f} m  T2 được tính ra bằng: {X2:.3f} m")
 
         return line1, line2, peak1, peak2, txt1, txt2
 
