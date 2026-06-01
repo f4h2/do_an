@@ -40,6 +40,9 @@ def _write_interleaved_int16(path: str, iq: np.ndarray) -> None:
     with open(path, "wb") as f:
         f.write(i16.tobytes())
 
+def _write_complex64(path: str, iq: np.ndarray) -> None:
+    iq.astype(np.complex64).tofile(path)
+
 
 def _publish_zmq_realtime(
     *,
@@ -83,10 +86,10 @@ def _publish_zmq_realtime(
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Phát tín hiệu GNSS giả lập (file hoặc ZMQ realtime).")
     p.add_argument("--mode", choices=["FILE", "ZMQ"], default="ZMQ", help="Chế độ phát.")
-    p.add_argument("--address", default="tcp://127.0.0.1:5555", help="ZMQ bind address (PUB).")
+    p.add_argument("--address", default="tcp://127.0.0.1:5556", help="ZMQ bind address (PUB).")
     p.add_argument("--fs", type=float, default=2e6, help="Sample rate (Hz).")
     p.add_argument("--Rc", type=float, default=1.023e6, help="Chip rate (Hz).")
-    p.add_argument("--ft", type=float, default=10.0, help="Doppler offset (Hz).")
+    p.add_argument("--ft", type=float, default=0, help="Doppler offset (Hz).")
     p.add_argument("--time_s", type=float, default=1.0, help="Thời lượng tín hiệu (giây).")
     p.add_argument("--chunk", type=int, default=10000, help="Số mẫu gửi mỗi gói (ZMQ).")
     p.add_argument("--pace", action="store_true", help="Pace theo fs để giống realtime.")
@@ -112,8 +115,9 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.mode == "FILE":
-        _write_interleaved_int16(args.out, iq)
-        print(f"Đã lưu file int16 IQ xen kẽ: {args.out} (N={N}, fs={args.fs})")
+        _write_complex64(args.out, iq)
+        # _write_interleaved_int16(args.out, iq)
+        # print(f"Đã lưu file int16 IQ xen kẽ: {args.out} (N={N}, fs={args.fs})")
         return 0
 
     print(f"ZMQ PUB bind: {args.address} | dtype=complex64 | chunk={args.chunk} | fs={args.fs}")

@@ -87,5 +87,8 @@ Các file này dùng để sinh dữ liệu thô và lưu ra file `.bin`, hoặc
 - **`gnss_utils.py`**: File thư viện tự viết. Chứa hàm `generateCAcode(prn)` để tạo chuỗi mã GPS C/A 1023 bit và hàm `calcDistance(lat1, lon1, lat2, lon2)` để tính khoảng cách địa lý (Haversine). Các file khác đều gọi hàm từ file này.
 
 
-python3 python_code/phat_tin_hieu.py --mode ZMQ --address tcp://127.0.0.1:5556 --pace --repeat
+python thu_tin_hieu_rt_gui_freqsearch.py --mode ZMQ --address tcp://127.0.0.1:5555 --f-min -5000 --f-max 5000
+
+
+python3 phat_tin_hieu_rt_zmq.py --mode ZMQ --address tcp://127.0.0.1:5556 --pace --repeat
 INPUT_MODE=ZMQ python3 thu_tin_hieu_rt_gui.py

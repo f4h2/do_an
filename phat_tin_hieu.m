@@ -36,7 +36,7 @@ IQ(2:2:end) = normalized_Q;
 num_repeats = 5;
 IQ_p_repeated = repmat(IQ, 1, num_repeats);
 
-fid_11_20 = fopen(['D:\do_an_tot_nghiep\data_2506_phat_ca_new2_8M.bin'], 'wb');
+fid_11_20 = fopen(['data_2506_phat_ca_new2_8M.bin'], 'wb');
 
 if fid_11_20 == -1
     error('Không thể mở tệp tin để ghi.');

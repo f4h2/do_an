@@ -36,7 +36,7 @@ def thu_tin_hieu_rt_gui():
 
     # fs = 2e6, Rc = 1.023e6. 10ms = 20,000 mẫu. 
     # Mã CA 10ms là 10230 chips.
-    n_local = np.arange(100000)
+    n_local = np.arange(20000)  # 10ms ở 2MHz
     idx_local = np.floor(n_local / fs * Rc).astype(int) % 10230
     local1_fs = cacodes1[idx_local].astype(np.complex64)
     local2_fs = cacodes2[idx_local].astype(np.complex64)
@@ -88,8 +88,8 @@ def thu_tin_hieu_rt_gui():
     plt.ion()
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
 
-    line1, = ax1.plot(np.zeros(100000), color='#1f77b4', linewidth=0.5, alpha=0.7, label='Signal TX1')
-    line2, = ax2.plot(np.zeros(100000), color='#ff7f0e', linewidth=0.5, alpha=0.7, label='Signal TX2')
+    line1, = ax1.plot(np.zeros(20000), color='#1f77b4', linewidth=0.5, alpha=0.7, label='Signal TX1')
+    line2, = ax2.plot(np.zeros(20000), color='#ff7f0e', linewidth=0.5, alpha=0.7, label='Signal TX2')
 
     peak_dot1, = ax1.plot([0], [0], 'ro', markersize=6, label='Peak TX1')
     peak_dot2, = ax2.plot([0], [0], 'go', markersize=6, label='Peak TX2')
@@ -136,8 +136,8 @@ def thu_tin_hieu_rt_gui():
                 # Bù Doppler
                 IQ_shifted = IQ * np.exp(1j * 2 * np.pi * ft * n_arr / fs)
 
-                # Tương quan nhanh (FFT size 100,000)
-                IQ_padded = np.zeros(100000, dtype=np.complex64)
+                # Tương quan nhanh (FFT size 20,000 = 10ms ở 2MHz)
+                IQ_padded = np.zeros(20000, dtype=np.complex64)
                 IQ_padded[:Nmax] = IQ_shifted
                 f_IQ = np.fft.fft(IQ_padded)
 
