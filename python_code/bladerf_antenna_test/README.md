@@ -164,8 +164,16 @@ python phat_thu_bladerf_gui.py --freq_hz 433e6 \
     --prn2_start 21  --prn2_end 30
 
 
-python phat_tin_hieu_bladerf.py --prn_start 11 --prn_end 20 --freq_hz 433e6 --serial 6ed84115bdca40800254de285ec1d898
+python phat_tin_hieu_bladerf.py --prn_start 11 --prn_end 20 --freq_hz 433e6 --serial 9d1755063f78cde4c2960ba35600ceb5
 
 python phat_tin_hieu_bladerf_2.py --prn_start 21 --prn_end 30 --freq_hz 433e6 --serial a0e5ffb5f1c28a2d57f5f5d9d13372ed
 
-python thu_tin_hieu_bladerf_gui.py --prn1_start 11 --prn1_end 20 --prn2_start 21 --prn2_end 30 --freq_hz 433e6 --serial 9d1755063f78cde4c2960ba35600ceb5
+python thu_tin_hieu_bladerf_gui_copy2.py --prn1_start 11 --prn1_end 20 --prn2_start 21 --prn2_end 30 --freq_hz 433e6 --serial 6ed84115bdca40800254de285ec1d898
+
+9d1755063f78cde4c2960ba35600ceb5
+
+
+python thu_tin_hieu_bladerf_newton.py \
+    --tx_prn_ranges 11:20,21:30,31:32,1:10 \
+    --freq_hz 433e6 \
+    --serial a0e5ffb5f1c28a2d57f5f5d9d13372ed

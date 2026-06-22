@@ -148,7 +148,7 @@ def main(argv=None):
     p.add_argument("--prn_start", type=int,   default=11,      help="PRN bắt đầu.")
     p.add_argument("--prn_end",   type=int,   default=20,      help="PRN kết thúc.")
     p.add_argument("--amplitude", type=float, default=1024.0,  help="Biên độ IQ (0–2047).")
-    p.add_argument("--tx_gain",   type=int,   default=60,      help="Gain TX (dB).")
+    p.add_argument("--tx_gain",   type=int,   default=70,      help="Gain TX (dB).")
     p.add_argument("--serial",    default="", help="Serial BladeRF TX.")
     p.add_argument("--save_file", default="",                  help="Nếu đặt, lưu tín hiệu ra file .bin rồi thoát.")
     args = p.parse_args(argv)
