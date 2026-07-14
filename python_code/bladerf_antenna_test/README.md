@@ -10,8 +10,14 @@ Sau khi thu xong, script tự động tính **cross-correlation** và vẽ đồ
 
 ```
 bladerf_antenna_test/
-├── bladerf_loopback_test.py   # Script chính
-└── README.md                  # File này
+├── bladerf_loopback_test.py
+├── phat_tin_hieu_bladerf.py      # Phát qua BladeRF
+├── phat_tin_hieu_bladerf_2.py    # Phát TX2 (PRN khác)
+├── phat_tin_hieu_hackrf.py       # Phát qua HackRF One (SoapySDR)
+├── thu_tin_hieu_bladerf_gui_copy.py
+├── thu_tin_hieu_bladerf_newton.py
+├── phat_thu_bladerf_gui.py
+└── README.md
 ```
 
 ---
@@ -156,24 +162,128 @@ signal = I + 1j * Q
 | Độ dài C/A code | 1023 chips (~1 ms) |
 | Tính tương quan | FFT cross-correlation (O(N log N)) |
 
+---
+
+## Lệnh chạy (gốc)
 
 khi có 1 thiết bị vừa thu vừa phát
+
+```bash
 python phat_thu_bladerf_gui.py --freq_hz 433e6 \
     --tx_prn_start 11 --tx_prn_end 20 \
     --prn1_start 11  --prn1_end 20 \
     --prn2_start 21  --prn2_end 30
+```
 
-
-python phat_tin_hieu_bladerf.py --prn_start 11 --prn_end 20 --freq_hz 433e6 --serial 9d1755063f78cde4c2960ba35600ceb5
+```bash
+python phat_tin_hieu_bladerf.py --prn_start 26 --prn_end 30 --freq_hz 433e6 --serial f444bf4f6a404a40a2ea650066b7e17c
 
 python phat_tin_hieu_bladerf_2.py --prn_start 21 --prn_end 30 --freq_hz 433e6 --serial a0e5ffb5f1c28a2d57f5f5d9d13372ed
 
 python thu_tin_hieu_bladerf_gui_copy2.py --prn1_start 11 --prn1_end 20 --prn2_start 21 --prn2_end 30 --freq_hz 433e6 --serial 6ed84115bdca40800254de285ec1d898
+```
 
+```
 9d1755063f78cde4c2960ba35600ceb5
+```
 
-
+```bash
 python thu_tin_hieu_bladerf_newton.py \
     --tx_prn_ranges 11:20,21:30,31:32,1:10 \
     --freq_hz 433e6 \
     --serial a0e5ffb5f1c28a2d57f5f5d9d13372ed
+```
+
+---
+
+## HackRF One — phát tín hiệu (SoapySDR)
+
+### Cài đặt
+
+```bash
+conda activate gnss_env
+
+# Driver hệ thống + module Soapy cho HackRF
+sudo apt install hackrf libhackrf-dev soapysdr-tools soapysdr-module-hackrf
+
+# Python
+pip install SoapySDR numpy
+```
+
+### Kiểm tra trước khi chạy
+
+```bash
+hackrf_info
+```
+
+Nếu dùng **conda `gnss_env`**, SoapySDR trong conda không tự thấy module HackRF của hệ thống.
+Phải export trước (hoặc dùng script `phat_tin_hieu_hackrf.py` — script tự set):
+
+```bash
+export SOAPY_SDR_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/SoapySDR/modules0.8
+SoapySDRUtil --find="driver=hackrf"
+```
+
+Kết quả mong muốn: thấy `driver=hackrf` và serial thiết bị.
+
+### Phát realtime (tương đương `phat_tin_hieu_bladerf.py`)
+
+```bash
+cd python_code/bladerf_antenna_test
+conda activate gnss_env
+
+python phat_tin_hieu_hackrf.py \
+    --prn_start 11 --prn_end 20 \
+    --freq_hz 433e6 \
+    --fs 2e6 \
+    --ft 0 \
+    --tau 40 \
+    --tx_gain 30
+```
+
+Có serial cụ thể:
+
+```bash
+python phat_tin_hieu_hackrf.py \
+    --prn_start 11 --prn_end 20 \
+    --freq_hz 433e6 \
+    --serial <HACKRF_SERIAL>
+```
+
+Chỉ tạo file IQ (không cần cắm HackRF):
+
+```bash
+python phat_tin_hieu_hackrf.py \
+    --prn_start 11 --prn_end 20 \
+    --fs 2e6 \
+    --save_file tx_prn11_20_433.bin
+```
+
+### Lỗi `SoapySDR::Device::make() no match` / `No devices found! driver=hackrf`
+
+| Tình huống | Cách xử lý |
+|------------|------------|
+| `hackrf_info` OK, `SoapySDRUtil` không thấy | Trong conda: `export SOAPY_SDR_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/SoapySDR/modules0.8` |
+| Chưa cài module Soapy | `sudo apt install soapysdr-module-hackrf` |
+| `hackrf_info` lỗi | `sudo apt install hackrf` + kiểm tra USB |
+| Quyền USB | `sudo usermod -aG plugdev $USER` rồi logout/login |
+
+**Giải thích:** `hackrf_info` dùng **libhackrf** trực tiếp (đã OK trên máy bạn).
+`SoapySDRUtil` trong **conda** chỉ tìm module ở `~/anaconda3/envs/gnss_env/lib/SoapySDR/` (trống),
+không tự quét `/usr/lib/.../libHackRFSupport.so` nếu chưa set `SOAPY_SDR_PLUGIN_PATH`.
+
+Serial HackRF của bạn (từ `hackrf_info`):
+
+```
+000000000000000024b862dc31264fcb
+```
+
+Chạy với serial:
+
+```bash
+export SOAPY_SDR_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/SoapySDR/modules0.8
+python phat_tin_hieu_hackrf.py \
+    --prn_start 11 --prn_end 20 \
+    --freq_hz 433e6 \
+    --serial 000000000000000024b862dc31264fcb
+```

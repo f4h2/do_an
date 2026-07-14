@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Định vị RX — Newton 3 TX</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root { --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #e6edf3; --accent: #58a6ff; --ok: #3fb950; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+    h1 { margin: 0; font-size: 1.25rem; }
+    main { padding: 1rem 1.5rem; display: grid; gap: 1rem; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+    .coords { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.5rem; }
+    label { display: block; font-size: 0.75rem; color: #8b949e; }
+    input { width: 100%; padding: 0.4rem; border-radius: 6px; border: 1px solid var(--border); background: #0d1117; color: var(--text); font-size: 0.85rem; }
+    pre { margin: 0; font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap; }
+    button { padding: 0.5rem 1rem; border-radius: 6px; border: none; cursor: pointer; background: var(--accent); color: #0d1117; font-weight: 600; }
+    a.back { color: var(--accent); text-decoration: none; font-size: 0.9rem; }
+    canvas { max-height: 320px; }
+    @media (max-width: 900px) { .grid-3 { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Bước 2 — Định vị máy thu (Newton)</h1>
+      <a class="back" href="/">← Quay lại hiệu chuẩn</a>
+    </div>
+    <button onclick="updateCoords()">Cập nhật toạ độ TX</button>
+  </header>
+  <main>
+    <section class="panel">
+      <h2>Toạ độ trạm phát (lat / lon)</h2>
+      <div class="coords" id="coordFields"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Kết quả Newton</h2>
+      <pre id="newtonOut">Đang chờ dữ liệu…</pre>
+    </section>
+
+    <section class="panel grid-3" id="corrCharts"></section>
+  </main>
+  <script>
+    const COORD_KEYS = ['TX1_lat','TX1_lon','TX2_lat','TX2_lon','TX3_lat','TX3_lon'];
+    const charts = [];
+
+    function buildCoordForm(defaults) {
+      const box = document.getElementById('coordFields');
+      box.innerHTML = '';
+      COORD_KEYS.forEach(k => {
+        const d = document.createElement('div');
+        d.innerHTML = `<label>${k.replace('_',' ')}</label><input id="${k}" type="number" step="any" value="${defaults[k] ?? 0}">`;
+        box.appendChild(d);
+      });
+    }
+
+    function initCharts(n) {
+      const box = document.getElementById('corrCharts');
+      box.innerHTML = '';
+      charts.length = 0;
+      for (let i = 0; i < n; i++) {
+        const wrap = document.createElement('div');
+        wrap.innerHTML = `<div style="font-size:0.85rem;margin-bottom:0.35rem" id="lbl${i}">TX${i+1}</div><canvas id="c${i}"></canvas>`;
+        box.appendChild(wrap);
+        const ctx = document.getElementById(`c${i}`).getContext('2d');
+        charts.push(new Chart(ctx, {
+          type: 'line',
+          data: { labels: [], datasets: [{ data: [], borderWidth: 1, pointRadius: 0, borderColor: '#3fb950' }] },
+          options: {
+            animation: false, responsive: true,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { title: { display: true, text: 'Delay (samples)', color: '#8b949e' }, ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+              y: {
+                beginAtZero: true,
+                grace: '35%',
+                title: { display: true, text: '|corr|', color: '#8b949e' },
+                ticks: { color: '#8b949e' },
+                grid: { color: '#21262d' }
+              }
+            }
+          }
+        }));
+      }
+    }
+
+    async function updateCoords() {
+      const coords = {};
+      COORD_KEYS.forEach(k => {
+        coords[k] = +document.getElementById(k).value;
+      });
+      await fetch('/api/geometry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coords }) });
+    }
+
+    function formatNewton(n) {
+      if (!n) return 'Đang chờ…';
+      let s = '── Pseudorange (bù Delta_m) & Newton ──\n';
+      (n.pseudorange || []).forEach((p, i) => {
+        s += `TX${i+1}: tau=${n.taus[i]}  P=${p.toFixed(2)} m`;
+        if (n.true_dist) s += `  true=${n.true_dist[i].toFixed(2)} m`;
+        s += '\n';
+      });
+      s += `\nx_est = ${n.pos[0].toFixed(3)} m\ny_est = ${n.pos[1].toFixed(3)} m\nb_est = ${n.pos[2].toFixed(3)} m\n`;
+      if (n.err_norm != null) s += `\nErr = ${n.err_norm.toFixed(3)} m`;
+      return s;
+    }
+
+    async function poll() {
+      try {
+        const r = await fetch('/api/status');
+        const s = await r.json();
+        if (s.coords && !document.getElementById('TX1_lat')) buildCoordForm(s.coords);
+        if (charts.length !== s.corr.length) initCharts(s.corr.length);
+        s.corr.forEach((c, i) => {
+          charts[i].data.labels = c.x;
+          charts[i].data.datasets[0].data = c.y;
+          if (c.tau != null) {
+            charts[i].data.datasets[1] = charts[i].data.datasets[1] || { type: 'scatter', data: [], borderColor: '#f85149', backgroundColor: '#f85149', pointRadius: 5, showLine: false };
+            charts[i].data.datasets[1].data = [{ x: c.tau, y: c.peak }];
+          }
+          if (c.peak != null && c.peak > 0) {
+            charts[i].options.scales.y.suggestedMax = c.peak * 1.4;
+          }
+          document.getElementById(`lbl${i}`).textContent = `${c.label}  |  tau=${c.tau}  mag=${c.peak?.toFixed(1)}`;
+          charts[i].update('none');
+        });
+        document.getElementById('newtonOut').textContent = formatNewton(s.newton);
+      } catch (e) { console.warn(e); }
+      setTimeout(poll, 300);
+    }
+
+    initCharts(3);
+    poll();
+  </script>
+</body>
+</html>

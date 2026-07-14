@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Đồng bộ 3 TX — Hiệu chỉnh Delta_m</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root { --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #e6edf3; --accent: #58a6ff; --ok: #3fb950; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); }
+    h1 { margin: 0; font-size: 1.25rem; }
+    .sub { color: #8b949e; font-size: 0.9rem; margin-top: 0.35rem; }
+    main { padding: 1rem 1.5rem; display: grid; gap: 1rem; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+    label { display: block; font-size: 0.8rem; color: #8b949e; margin-bottom: 0.25rem; }
+    input { width: 100%; padding: 0.45rem 0.6rem; border-radius: 6px; border: 1px solid var(--border); background: #0d1117; color: var(--text); }
+    .pair-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; align-items: end; margin-bottom: 0.75rem; }
+    .pair-title { font-weight: 600; color: var(--accent); margin-bottom: 0.5rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); text-align: left; }
+    .actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1rem; }
+    button { padding: 0.55rem 1.1rem; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; }
+    .btn-primary { background: var(--accent); color: #0d1117; }
+    .btn-ok { background: var(--ok); color: #0d1117; }
+    .btn-next { background: #a371f7; color: #0d1117; }
+    .btn-next:disabled { opacity: 0.4; cursor: not-allowed; }
+    .locked { color: var(--ok); font-weight: 600; }
+    canvas { max-height: 320px; }
+    @media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Bước 1 — Đồng bộ 3 máy phát</h1>
+    <p class="sub">Nhập khoảng cách RX→TX (m) cho 2 cặp (TX1–TX2, TX1–TX3), khóa Delta_m rồi chuyển sang định vị.</p>
+  </header>
+  <main>
+    <section class="panel">
+      <h2>Khoảng cách hiệu chuẩn (m)</h2>
+      <div class="grid-2" style="margin-top:0.75rem">
+        <div>
+          <div class="pair-title">Cặp TX1 – TX2</div>
+          <div class="pair-row">
+            <div><label>RX → TX1</label><input id="d12_t1" type="number" step="0.001" value="3.92"></div>
+            <div><label>RX → TX2</label><input id="d12_t2" type="number" step="0.001" value="2.94"></div>
+          </div>
+        </div>
+        <div>
+          <div class="pair-title">Cặp TX1 – TX3</div>
+          <div class="pair-row">
+            <div><label>RX → TX1</label><input id="d13_t1" type="number" step="0.001" value="3.92"></div>
+            <div><label>RX → TX3</label><input id="d13_t3" type="number" step="0.001" value="4.50"></div>
+          </div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn-primary" onclick="saveDistances()">Lưu khoảng cách</button>
+        <button class="btn-ok" onclick="lockDeltaM()">Khóa Delta_m</button>
+        <button class="btn-next" id="btnNext" disabled onclick="goNext()">Next → Định vị RX</button>
+        <span id="lockStatus"></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Delta_m theo cặp (m)</h2>
+      <table>
+        <thead><tr><th>Cặp</th><th>tau_a − tau_b</th><th>T0 (samples)</th><th>ΔT_fixed</th><th>Delta_m</th></tr></thead>
+        <tbody id="pairTable"></tbody>
+      </table>
+    </section>
+
+    <section class="panel grid-3" id="corrCharts"></section>
+  </main>
+  <script>
+    const charts = [];
+
+    function pairLabel(a, b) { return `TX${a+1}–TX${b+1}`; }
+
+    function initCharts(n) {
+      const box = document.getElementById('corrCharts');
+      box.innerHTML = '';
+      charts.length = 0;
+      for (let i = 0; i < n; i++) {
+        const wrap = document.createElement('div');
+        wrap.innerHTML = `<div style="font-size:0.85rem;margin-bottom:0.35rem" id="lbl${i}">TX${i+1}</div><canvas id="c${i}"></canvas>`;
+        box.appendChild(wrap);
+        const ctx = document.getElementById(`c${i}`).getContext('2d');
+        charts.push(new Chart(ctx, {
+          type: 'line',
+          data: { labels: [], datasets: [{ data: [], borderWidth: 1, pointRadius: 0, borderColor: '#58a6ff' }] },
+          options: {
+            animation: false,
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { title: { display: true, text: 'Delay (samples)', color: '#8b949e' }, ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+              y: {
+                beginAtZero: true,
+                grace: '35%',
+                title: { display: true, text: '|corr|', color: '#8b949e' },
+                ticks: { color: '#8b949e' },
+                grid: { color: '#21262d' }
+              }
+            }
+          }
+        }));
+      }
+    }
+
+    async function saveDistances() {
+      const body = {
+        pairs: [
+          { tx_a: 0, tx_b: 1, dist_rx_tx_a: +document.getElementById('d12_t1').value, dist_rx_tx_b: +document.getElementById('d12_t2').value },
+          { tx_a: 0, tx_b: 2, dist_rx_tx_a: +document.getElementById('d13_t1').value, dist_rx_tx_b: +document.getElementById('d13_t3').value },
+        ]
+      };
+      await fetch('/api/calibration/distances', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    }
+
+    async function lockDeltaM() {
+      await saveDistances();
+      const r = await fetch('/api/calibration/lock', { method: 'POST' });
+      const j = await r.json();
+      document.getElementById('lockStatus').innerHTML = j.locked ? '<span class="locked">✓ Delta_m đã khóa</span>' : '';
+      document.getElementById('btnNext').disabled = !j.locked;
+    }
+
+    async function goNext() {
+      const r = await fetch('/api/next', { method: 'POST' });
+      const j = await r.json();
+      if (j.ok) window.location.href = '/positioning';
+    }
+
+    function updatePairTable(pairs) {
+      const tb = document.getElementById('pairTable');
+      tb.innerHTML = pairs.map(p => `<tr>
+        <td>${pairLabel(p.tx_a, p.tx_b)}</td>
+        <td>${p.tau_diff ?? '—'}</td>
+        <td>${p.t0_samples?.toFixed(4) ?? '—'}</td>
+        <td>${p.delta_t_fixed?.toFixed(4) ?? '—'}</td>
+        <td>${p.delta_m?.toFixed(4) ?? '—'}</td>
+      </tr>`).join('');
+    }
+
+    async function poll() {
+      try {
+        const r = await fetch('/api/status');
+        const s = await r.json();
+        if (charts.length !== s.corr.length) initCharts(s.corr.length);
+        s.corr.forEach((c, i) => {
+          charts[i].data.labels = c.x;
+          charts[i].data.datasets[0].data = c.y;
+          charts[i].data.datasets[0].pointRadius = 0;
+          if (c.tau != null) {
+            charts[i].data.datasets[1] = charts[i].data.datasets[1] || { type: 'scatter', data: [], borderColor: '#f85149', backgroundColor: '#f85149', pointRadius: 5, showLine: false };
+            charts[i].data.datasets[1].data = [{ x: c.tau, y: c.peak }];
+          }
+          if (c.peak != null && c.peak > 0) {
+            charts[i].options.scales.y.suggestedMax = c.peak * 1.4;
+          }
+          document.getElementById(`lbl${i}`).textContent = `${c.label}  |  tau=${c.tau}  mag=${c.peak?.toFixed(1)}`;
+          charts[i].update('none');
+        });
+        updatePairTable(s.pairs || []);
+        if (s.delta_m_locked) {
+          document.getElementById('lockStatus').innerHTML = '<span class="locked">✓ Delta_m đã khóa</span>';
+          document.getElementById('btnNext').disabled = false;
+        }
+      } catch (e) { console.warn(e); }
+      setTimeout(poll, 300);
+    }
+
+    initCharts(3);
+    poll();
+  </script>
+</body>
+</html>

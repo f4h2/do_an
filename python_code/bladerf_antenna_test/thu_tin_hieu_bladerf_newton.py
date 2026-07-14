@@ -134,13 +134,9 @@ def correlate_time_domain_receiver_m(
     return xcorr, tau_peak
 
 
-def delays_to_pseudorange(
-    taus: np.ndarray,
-    fs: float,
-    range_bias_samples: float,
-) -> np.ndarray:
-    t_rel = np.max(taus) - taus
-    return (range_bias_samples + t_rel) / fs * SPEED_OF_LIGHT
+def delays_to_pseudorange(taus: np.ndarray, fs: float) -> np.ndarray:
+    """Pseudorange (m) = độ trễ (s) × c, với độ trễ = tau / fs."""
+    return taus.astype(float) / fs * SPEED_OF_LIGHT
 
 
 def newton_position(
@@ -281,12 +277,6 @@ def main(argv=None) -> int:
         "--tx_prn_ranges",
         default="",
         help="Ghi đè --tx_prns, ví dụ 11:20,21:30,31:32,1:10.",
-    )
-    p.add_argument(
-        "--range_bias_samples",
-        type=float,
-        default=5.0,
-        help="Hằng số cộng thêm khi đổi delay → pseudorange (mặc định 5 như receiver.m).",
     )
     p.add_argument("--newton_iters", type=int, default=10)
     p.add_argument("--num_processed", type=int, default=0, help="Số mẫu cho corr time-domain (0=auto).")
@@ -537,7 +527,7 @@ def main(argv=None) -> int:
             mags[i] = peak
             corr_profiles.append(profile)
 
-        pseudorange = delays_to_pseudorange(taus, fs, args.range_bias_samples)
+        pseudorange = delays_to_pseudorange(taus, fs)
         pos = newton_position(
             state["tx_xy"],
             pseudorange,
