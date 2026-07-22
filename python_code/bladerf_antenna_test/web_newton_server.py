@@ -370,6 +370,8 @@ def build_app(state: AppState, args: argparse.Namespace) -> Flask:
                     "pairs": pairs_out,
                     "corr": corr,
                     "coords": {k: float(v) for k, v in state.coords.items()},
+                    "tx_xy": state.tx_xy.tolist(),
+                    "rx_hint": [float(state.rx_hint[0]), float(state.rx_hint[1])],
                     "newton": state.newton_out,
                 }
             )

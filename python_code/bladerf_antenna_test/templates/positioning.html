@@ -14,14 +14,24 @@
     main { padding: 1rem 1.5rem; display: grid; gap: 1rem; }
     .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
     .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+    .row-2 { display: grid; grid-template-columns: 1fr minmax(280px, 340px); gap: 1rem; align-items: stretch; }
     .coords { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.5rem; }
     label { display: block; font-size: 0.75rem; color: #8b949e; }
     input { width: 100%; padding: 0.4rem; border-radius: 6px; border: 1px solid var(--border); background: #0d1117; color: var(--text); font-size: 0.85rem; }
     pre { margin: 0; font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap; }
     button { padding: 0.5rem 1rem; border-radius: 6px; border: none; cursor: pointer; background: var(--accent); color: #0d1117; font-weight: 600; }
     a.back { color: var(--accent); text-decoration: none; font-size: 0.9rem; }
-    canvas { max-height: 320px; }
-    @media (max-width: 900px) { .grid-3 { grid-template-columns: 1fr; } }
+    canvas.corr { max-height: 320px; }
+    .radar-wrap { display: flex; flex-direction: column; gap: 0.5rem; height: 100%; }
+    #radar { width: 100%; aspect-ratio: 1; max-height: 320px; background: #0a0f14; border-radius: 8px; border: 1px solid var(--border); }
+    .legend { display: flex; flex-wrap: wrap; gap: 0.75rem; font-size: 0.75rem; color: #8b949e; }
+    .legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 0.35rem; vertical-align: middle; }
+    .legend .tx::before { background: #58a6ff; }
+    .legend .rx::before { background: #f85149; }
+    .legend .hint::before { background: #3fb950; }
+    @media (max-width: 900px) {
+      .grid-3, .row-2 { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -38,9 +48,20 @@
       <div class="coords" id="coordFields"></div>
     </section>
 
-    <section class="panel">
-      <h2>Kết quả Newton</h2>
-      <pre id="newtonOut">Đang chờ dữ liệu…</pre>
+    <section class="row-2">
+      <div class="panel">
+        <h2>Kết quả Newton</h2>
+        <pre id="newtonOut">Đang chờ dữ liệu…</pre>
+      </div>
+      <div class="panel radar-wrap">
+        <h2>Radar vị trí (m)</h2>
+        <canvas id="radar" width="320" height="320"></canvas>
+        <div class="legend">
+          <span class="tx">TX</span>
+          <span class="rx">RX ước lượng</span>
+          <span class="hint">RX tham chiếu</span>
+        </div>
+      </div>
     </section>
 
     <section class="panel grid-3" id="corrCharts"></section>
@@ -48,6 +69,9 @@
   <script>
     const COORD_KEYS = ['TX1_lat','TX1_lon','TX2_lat','TX2_lon','TX3_lat','TX3_lon'];
     const charts = [];
+    const radar = document.getElementById('radar');
+    const rctx = radar.getContext('2d');
+    let sweepAngle = 0;
 
     function buildCoordForm(defaults) {
       const box = document.getElementById('coordFields');
@@ -65,7 +89,7 @@
       charts.length = 0;
       for (let i = 0; i < n; i++) {
         const wrap = document.createElement('div');
-        wrap.innerHTML = `<div style="font-size:0.85rem;margin-bottom:0.35rem" id="lbl${i}">TX${i+1}</div><canvas id="c${i}"></canvas>`;
+        wrap.innerHTML = `<div style="font-size:0.85rem;margin-bottom:0.35rem" id="lbl${i}">TX${i+1}</div><canvas class="corr" id="c${i}"></canvas>`;
         box.appendChild(wrap);
         const ctx = document.getElementById(`c${i}`).getContext('2d');
         charts.push(new Chart(ctx, {
@@ -110,6 +134,125 @@
       return s;
     }
 
+    function drawRadar(txXy, rxEst, rxHint) {
+      const w = radar.width;
+      const h = radar.height;
+      const cx = w / 2;
+      const cy = h / 2;
+      const pts = [...(txXy || [])];
+      if (rxEst) pts.push(rxEst);
+      if (rxHint) pts.push(rxHint);
+
+      let maxR = 1;
+      for (const p of pts) {
+        const r = Math.hypot(p[0], p[1]);
+        if (r > maxR) maxR = r;
+      }
+      maxR *= 1.25;
+      const scale = (Math.min(w, h) / 2 - 18) / maxR;
+
+      rctx.clearRect(0, 0, w, h);
+
+      // background disc
+      rctx.beginPath();
+      rctx.arc(cx, cy, maxR * scale, 0, Math.PI * 2);
+      rctx.fillStyle = '#071018';
+      rctx.fill();
+
+      // rings + crosshair
+      rctx.strokeStyle = '#1f6f4a88';
+      rctx.lineWidth = 1;
+      for (let i = 1; i <= 4; i++) {
+        const rr = (maxR * scale * i) / 4;
+        rctx.beginPath();
+        rctx.arc(cx, cy, rr, 0, Math.PI * 2);
+        rctx.stroke();
+        rctx.fillStyle = '#3fb95055';
+        rctx.font = '10px system-ui';
+        rctx.fillText(`${((maxR * i) / 4).toFixed(0)} m`, cx + 4, cy - rr + 10);
+      }
+      rctx.beginPath();
+      rctx.moveTo(cx - maxR * scale, cy);
+      rctx.lineTo(cx + maxR * scale, cy);
+      rctx.moveTo(cx, cy - maxR * scale);
+      rctx.lineTo(cx, cy + maxR * scale);
+      rctx.stroke();
+
+      // sweeping wedge
+      sweepAngle = (sweepAngle + 0.04) % (Math.PI * 2);
+      const grad = rctx.createRadialGradient(cx, cy, 0, cx, cy, maxR * scale);
+      grad.addColorStop(0, 'rgba(63,185,80,0.18)');
+      grad.addColorStop(1, 'rgba(63,185,80,0)');
+      rctx.beginPath();
+      rctx.moveTo(cx, cy);
+      rctx.arc(cx, cy, maxR * scale, sweepAngle - 0.55, sweepAngle);
+      rctx.closePath();
+      rctx.fillStyle = grad;
+      rctx.fill();
+      rctx.beginPath();
+      rctx.moveTo(cx, cy);
+      rctx.lineTo(cx + Math.cos(sweepAngle) * maxR * scale, cy - Math.sin(sweepAngle) * maxR * scale);
+      rctx.strokeStyle = '#3fb950aa';
+      rctx.stroke();
+
+      const toPix = (x, y) => [cx + x * scale, cy - y * scale];
+
+      // RX hint
+      if (rxHint) {
+        const [px, py] = toPix(rxHint[0], rxHint[1]);
+        rctx.beginPath();
+        rctx.arc(px, py, 7, 0, Math.PI * 2);
+        rctx.strokeStyle = '#3fb950';
+        rctx.lineWidth = 2;
+        rctx.stroke();
+        rctx.fillStyle = '#3fb950';
+        rctx.font = '11px system-ui';
+        rctx.fillText('RX*', px + 8, py - 6);
+      }
+
+      // TX markers
+      (txXy || []).forEach((p, i) => {
+        const [px, py] = toPix(p[0], p[1]);
+        rctx.beginPath();
+        rctx.moveTo(px, py - 8);
+        rctx.lineTo(px + 7, py + 6);
+        rctx.lineTo(px - 7, py + 6);
+        rctx.closePath();
+        rctx.fillStyle = '#58a6ff';
+        rctx.fill();
+        rctx.fillStyle = '#e6edf3';
+        rctx.font = '11px system-ui';
+        rctx.fillText(`TX${i + 1}`, px + 8, py + 3);
+      });
+
+      // RX estimate
+      if (rxEst) {
+        const [px, py] = toPix(rxEst[0], rxEst[1]);
+        rctx.strokeStyle = '#f85149';
+        rctx.lineWidth = 2;
+        rctx.beginPath();
+        rctx.moveTo(px - 8, py);
+        rctx.lineTo(px + 8, py);
+        rctx.moveTo(px, py - 8);
+        rctx.lineTo(px, py + 8);
+        rctx.stroke();
+        rctx.beginPath();
+        rctx.arc(px, py, 4, 0, Math.PI * 2);
+        rctx.fillStyle = '#f85149';
+        rctx.fill();
+        rctx.fillStyle = '#f85149';
+        rctx.font = '11px system-ui';
+        rctx.fillText('RX', px + 8, py - 6);
+      }
+    }
+
+    let lastRadar = { tx: [], rx: null, hint: null };
+
+    function tickRadar() {
+      drawRadar(lastRadar.tx, lastRadar.rx, lastRadar.hint);
+      requestAnimationFrame(tickRadar);
+    }
+
     async function poll() {
       try {
         const r = await fetch('/api/status');
@@ -130,11 +273,16 @@
           charts[i].update('none');
         });
         document.getElementById('newtonOut').textContent = formatNewton(s.newton);
+
+        lastRadar.tx = s.tx_xy || [];
+        lastRadar.hint = s.rx_hint || null;
+        lastRadar.rx = (s.newton && s.newton.pos) ? [s.newton.pos[0], s.newton.pos[1]] : null;
       } catch (e) { console.warn(e); }
       setTimeout(poll, 300);
     }
 
     initCharts(3);
+    tickRadar();
     poll();
   </script>
 </body>
