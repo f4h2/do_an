@@ -61,16 +61,15 @@ bladeRF-cli -p
 
 
 
-khi có 1 thiết bị vừa thu vừa phát
 
 ```bash
-python phat_thu_bladerf_gui.py --freq_hz 433e6 \
-    --tx_prn_start 11 --tx_prn_end 20 \
-    --prn1_start 11  --prn1_end 20 \
-    --prn2_start 21  --prn2_end 30
+#python phat_thu_bladerf_gui.py --freq_hz 433e6 \
+#    --tx_prn_start 11 --tx_prn_end 20 \
+#    --prn1_start 11  --prn1_end 20 \
+#    --prn2_start 21  --prn2_end 30
 ```
 
-```bash
+```PHát tín hiệu
 python phat_tin_hieu_bladerf.py --prn_start 26 --prn_end 30 --freq_hz 433e6 --serial f444bf4f6a404a40a2ea650066b7e17c
 
 python phat_tin_hieu_bladerf_2.py --prn_start 21 --prn_end 30 --freq_hz 433e6 --serial a0e5ffb5f1c28a2d57f5f5d9d13372ed
@@ -81,18 +80,12 @@ python phat_tin_hieu_bladerf_2.py --prn_start 21 --prn_end 30 --freq_hz 433e6 --
 
 ## Web Newton — `web_newton_server.py`
 
-Flask web UI: hiệu chuẩn Delta_m (3 TX) + định vị Newton + đồ thị tương quan trên trình duyệt.
-
-### Cài thêm (nếu chưa có)
-
 ```bash
 conda activate gnss_env
 pip install flask
 ```
 
-### Chạy server (BladeRF RX)
-
-```bash
+``` THu tín hiệu
 cd python_code/bladerf_antenna_test
 conda activate gnss_env
 
