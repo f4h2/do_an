@@ -192,47 +192,54 @@ def build_default_coords() -> dict[str, float]:
 
 @dataclass
 class PairCalib:
-    tx_a: int
-    tx_b: int
-    dist_rx_tx_a: float = 0.0
-    dist_rx_tx_b: float = 0.0
-    dist_tx_tx: float = 0.0
-    t0_samples: float | None = None
-    tau_diff: int | None = None
-    delta_t_fixed: float | None = None
-    delta_m: float | None = None
+    tx_a: int                          # Chỉ số TX mốc trong cặp (thường 0 = TX1)
+    tx_b: int                          # Chỉ số TX còn lại (1=TX2 hoặc 2=TX3)
+    dist_rx_tx_a: float = 0.0          # Khoảng cách thật RX→TXa (m), nhập lúc hiệu chuẩn
+    dist_rx_tx_b: float = 0.0          # Khoảng cách thật RX→TXb (m)
+    dist_tx_tx: float = 0.0            # Khoảng cách giữa 2 TX (m), tham chiếu hình học
+    t0_samples: float | None = None    # T0 = (d_a - d_b)/c * fs — chênh lệch mẫu do hình học
+    tau_diff: int | None = None        # τ_a - τ_b đo từ tương quan (samples)
+    delta_t_fixed: float | None = None # (τ_a - τ_b) - T0 — bias thời gian còn lại (samples)
+    delta_m: float | None = None       # delta_t_fixed đổi ra mét: bias đồng bộ giữa TXa và TXb
 
 
 class AppState:
     def __init__(self) -> None:
-        self.lock = threading.Lock()
-        self.mode = "calibration"  # calibration | positioning
+        self.lock = threading.Lock()  # Khoá chia sẻ state giữa thread xử lý RF và Flask
+        self.mode = "calibration"  # "calibration" | "positioning" — bước hiện tại của web UI
 
-        self.fs = 2e6
-        self.rc = 1.023e6
-        self.ft = 0.0
-        self.nchunk = 10_000
-        self.nfft = 20_000
-        self.newton_iters = 10
-        self.num_tr = 3
+        # --- Tham số tín hiệu / xử lý ---
+        self.fs = 2e6              # Sample rate (Hz)
+        self.rc = 1.023e6          # Chip rate C/A (Hz)
+        self.ft = 0.0              # Offset Doppler baseband khi tương quan (Hz)
+        self.nchunk = 10_000       # Số mẫu IQ mỗi khung xử lý
+        self.nfft = 20_000         # Độ dài FFT (thường = 2 * nchunk, có zero-pad)
+        self.newton_iters = 10     # Số vòng lặp Newton
+        self.num_tr = 3            # Số trạm phát (TX)
 
-        self.prn_ranges: list[tuple[int, int]] = [(1, 1), (2, 2), (3, 3)]
-        self.f_locals: list[np.ndarray] = []
+        # --- Mã tham chiếu ---
+        self.prn_ranges: list[tuple[int, int]] = [(1, 1), (2, 2), (3, 3)]  # (prn_start, prn_end) từng TX
+        self.f_locals: list[np.ndarray] = []  # FFT mã cục bộ đã resample, 1 mảng / TX
 
-        self.coords = build_default_coords()
-        self.tx_xy = np.zeros((self.num_tr, 2), dtype=float)
-        self.rx_hint = (0.0, 0.0)
-        self.true_dist = np.zeros(self.num_tr, dtype=float)
+        # --- Hình học ---
+        self.coords = build_default_coords()  # Lat/lon TX1..TX3 và RX (dict)
+        self.tx_xy = np.zeros((self.num_tr, 2), dtype=float)  # Toạ độ TX local (m), gốc TX1
+        self.rx_hint = (0.0, 0.0)  # Toạ độ RX thật local (m) — khởi tạo Newton + tính sai số
+        self.true_dist = np.zeros(self.num_tr, dtype=float)  # Khoảng cách Haversine RX→từng TX (m)
 
-        self.corr_profiles: list[np.ndarray] = [np.zeros(self.nfft, dtype=float) for _ in range(self.num_tr)]
-        self.taus = np.zeros(self.num_tr, dtype=int)
-        self.peaks = np.zeros(self.num_tr, dtype=float)
+        # --- Kết quả tương quan realtime ---
+        self.corr_profiles: list[np.ndarray] = [np.zeros(self.nfft, dtype=float) for _ in range(self.num_tr)]  # Đường |corr| từng TX
+        self.taus = np.zeros(self.num_tr, dtype=int)   # Chỉ số đỉnh tương quan τ (samples) từng TX
+        self.peaks = np.zeros(self.num_tr, dtype=float)  # Biên độ đỉnh tương quan từng TX
 
-        # 2 cặp: TX1 so với TX2/TX3
+        # --- Hiệu chuẩn đồng bộ ---
+        # 2 cặp: TX1 so với TX2 / TX3
         self.pairs = [PairCalib(0, 1), PairCalib(0, 2)]
-        self.delta_m_locked = False
-        self.delta_m_by_tx = np.zeros(self.num_tr, dtype=float)  # TX1 = 0, TX2/TX3 = delta_m(TX1-TXi)
+        self.delta_m_locked = False  # True sau khi POST /api/calibration/lock thành công
+        # Bias (m) cộng vào pseudorange: TX1=0, TX2/TX3 = Δ_m(TX1−TXi)
+        self.delta_m_by_tx = np.zeros(self.num_tr, dtype=float)
 
+        # Kết quả Newton gần nhất: pos (x,y,b), pseudorange, err_norm, ...
         self.newton_out: dict | None = None
 
     def recalc_geometry(self) -> None:
